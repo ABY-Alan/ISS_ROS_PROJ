@@ -13,6 +13,9 @@ from nav_msgs.msg import Odometry
 from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import Twist
 
+
+DEFAULT_TIMEOUT_SEC = 90.0
+
 # --- 数据记录器类 ---
 
 class DataRecorder:
@@ -222,12 +225,94 @@ def control_policy_model_ppo_ckpt(
     return v_cmd, w_cmd
 
 
+def control_policy_model_ppo_blend(
+    x: float,
+    y: float,
+    yaw: float,
+    gx: float,
+    gy: float,
+    scan: Dict[str, Any],
+) -> Tuple[float, float]:
+    """模型优先控制：PPO输出 + 朝向纠偏 + 对称避障修正。"""
+    model_v, model_w = control_policy_model_ppo_ckpt(x, y, yaw, gx, gy, scan)
+
+    dx = gx - x
+    dy = gy - y
+    goal_yaw = math.atan2(dy, dx)
+    angle_error = goal_yaw - yaw
+    angle_error = math.atan2(math.sin(angle_error), math.cos(angle_error))
+
+    ranges = scan.get("ranges", [])
+    angle_min = float(scan.get("angle_min", -math.pi))
+    angle_inc = float(scan.get("angle_increment", 0.0))
+    rmin = float(scan.get("range_min", 0.0))
+    rmax = float(scan.get("range_max", 3.5))
+
+    front_vals = []
+    left_vals = []
+    right_vals = []
+    for i, raw in enumerate(ranges):
+        if raw is None or (not math.isfinite(raw)):
+            continue
+        dist = float(raw)
+        if not (rmin <= dist <= rmax):
+            continue
+
+        ang = angle_min + i * angle_inc
+        if abs(ang) <= 0.35:
+            front_vals.append(dist)
+        if 0.25 <= ang <= 1.10:
+            left_vals.append(dist)
+        if -1.10 <= ang <= -0.25:
+            right_vals.append(dist)
+
+    front_min = min(front_vals) if front_vals else rmax
+    left_min = min(left_vals) if left_vals else rmax
+    right_min = min(right_vals) if right_vals else rmax
+
+    max_v = 0.22
+    max_w = 1.0
+    avoid_trigger = 0.55
+    avoid_stop = 0.25
+
+    heading_w = float(max(-max_w, min(max_w, 1.8 * angle_error)))
+
+    # 左右扇区差值修正，抵消模型潜在单侧偏置。
+    side_diff = left_min - right_min
+    side_bias_w = float(max(-0.35, min(0.35, 0.9 * side_diff)))
+
+    avoid_w = 0.0
+    if front_min < avoid_trigger:
+        turn_dir = 1.0 if left_min >= right_min else -1.0
+        ratio = (avoid_trigger - front_min) / max(avoid_trigger - avoid_stop, 1e-6)
+        ratio = max(0.0, min(1.0, ratio))
+        avoid_w = turn_dir * (0.40 + 0.60 * ratio) * max_w
+
+    # 模型为主，加入目标朝向与环境对称修正。
+    if front_min < avoid_trigger:
+        w = 0.55 * model_w + 0.20 * heading_w + 0.25 * avoid_w
+    else:
+        w = 0.70 * model_w + 0.25 * heading_w + 0.05 * side_bias_w
+    w = float(max(-max_w, min(max_w, w)))
+
+    if abs(angle_error) > 1.05:
+        v = min(model_v, 0.06)
+    else:
+        clearance_scale = max(0.0, min(1.0, (front_min - avoid_stop) / (1.20 - avoid_stop)))
+        v = min(model_v, max_v) * clearance_scale
+        if front_min > 0.80 and abs(angle_error) < 0.25:
+            v = max(v, 0.08)
+    v = float(max(0.0, min(max_v, v)))
+
+    return v, w
+
+
 def track_single_goal(
     goal_xy: Tuple[float, float],
     recorder: DataRecorder, # 新增参数
     goal_name: str = "unknown", 
     reach_threshold_m: float = 0.25,
-    timeout_sec: float = 60.0,
+    timeout_sec: float = DEFAULT_TIMEOUT_SEC,
     control_rate_hz: float = 10.0,
     collision_fail_distance_m: float = 0.3,
     scene_data: Optional[Dict[str, Any]] = None,
@@ -318,9 +403,8 @@ def track_single_goal(
             ux = math.cos(angle_to_goal)
             uy = math.sin(angle_to_goal)
 
-            # 调用你的算法
-            # v, w = control_policy_no_model_with_noise(x, y, yaw, gx, gy, scan)
-            v, w = control_policy_model_ppo_ckpt(x, y, yaw, gx, gy, scan)
+            # 使用带模型控制策略
+            v, w = control_policy_model_ppo_blend(x, y, yaw, gx, gy, scan)
             
             # --- 关键：使用传入的 recorder 记录数据，带上 goal_name ---
             recorder.record(goal_name, gx, gy, ux, uy, pose, v, w, extra_data=scene_data)
