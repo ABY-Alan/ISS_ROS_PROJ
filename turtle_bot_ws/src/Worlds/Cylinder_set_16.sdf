@@ -1,0 +1,101 @@
+<?xml version='1.0'?>
+<sdf version='1.6'>
+  <model name='Cylinder_set_16'>
+    <static>true</static>
+    
+    <!-- 柱子按照指定坐标分布：(±3,0), (0,±3), (±1,0), (0,±1), (±1,±2), (±2,±1) -->
+    
+    <!-- (±3,0) - 2个 -->
+    <link name='cyl_3_0'>
+      <pose>3.0 0.0 0.5 0 0 0</pose>
+      <collision name='col'><geometry><cylinder><radius>0.15</radius><length>1.0</length></cylinder></geometry></collision>
+      <visual name='vis'><geometry><cylinder><radius>0.15</radius><length>1.0</length></cylinder></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+    </link>
+    <link name='cyl_n3_0'>
+      <pose>-3.0 0.0 0.5 0 0 0</pose>
+      <collision name='col'><geometry><cylinder><radius>0.15</radius><length>1.0</length></cylinder></geometry></collision>
+      <visual name='vis'><geometry><cylinder><radius>0.15</radius><length>1.0</length></cylinder></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+    </link>
+    
+    <!-- (0,±3) - 2个 -->
+    <link name='cyl_0_3'>
+      <pose>0.0 3.0 0.5 0 0 0</pose>
+      <collision name='col'><geometry><cylinder><radius>0.15</radius><length>1.0</length></cylinder></geometry></collision>
+      <visual name='vis'><geometry><cylinder><radius>0.15</radius><length>1.0</length></cylinder></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+    </link>
+    <link name='cyl_0_n3'>
+      <pose>0.0 -3.0 0.5 0 0 0</pose>
+      <collision name='col'><geometry><cylinder><radius>0.15</radius><length>1.0</length></cylinder></geometry></collision>
+      <visual name='vis'><geometry><cylinder><radius>0.15</radius><length>1.0</length></cylinder></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+    </link>
+
+    <!-- (±1,0) - 2个 -->
+    <link name='cyl_1_0'>
+      <pose>1.0 0.0 0.5 0 0 0</pose>
+      <collision name='col'><geometry><cylinder><radius>0.15</radius><length>1.0</length></cylinder></geometry></collision>
+      <visual name='vis'><geometry><cylinder><radius>0.15</radius><length>1.0</length></cylinder></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+    </link>
+    <link name='cyl_n1_0'>
+      <pose>-1.0 0.0 0.5 0 0 0</pose>
+      <collision name='col'><geometry><cylinder><radius>0.15</radius><length>1.0</length></cylinder></geometry></collision>
+      <visual name='vis'><geometry><cylinder><radius>0.15</radius><length>1.0</length></cylinder></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+    </link>
+    
+    <!-- (0,±1) - 2个 -->
+    <link name='cyl_0_1'>
+      <pose>0.0 1.0 0.5 0 0 0</pose>
+      <collision name='col'><geometry><cylinder><radius>0.15</radius><length>1.0</length></cylinder></geometry></collision>
+      <visual name='vis'><geometry><cylinder><radius>0.15</radius><length>1.0</length></cylinder></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+    </link>
+    <link name='cyl_0_n1'>
+      <pose>0.0 -1.0 0.5 0 0 0</pose>
+      <collision name='col'><geometry><cylinder><radius>0.15</radius><length>1.0</length></cylinder></geometry></collision>
+      <visual name='vis'><geometry><cylinder><radius>0.15</radius><length>1.0</length></cylinder></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+    </link>
+
+    <!-- (±1,±2) - 4个 -->
+    <link name='cyl_1_2'>
+      <pose>1.0 2.0 0.5 0 0 0</pose>
+      <collision name='col'><geometry><cylinder><radius>0.15</radius><length>1.0</length></cylinder></geometry></collision>
+      <visual name='vis'><geometry><cylinder><radius>0.15</radius><length>1.0</length></cylinder></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+    </link>
+    <link name='cyl_1_n2'>
+      <pose>1.0 -2.0 0.5 0 0 0</pose>
+      <collision name='col'><geometry><cylinder><radius>0.15</radius><length>1.0</length></cylinder></geometry></collision>
+      <visual name='vis'><geometry><cylinder><radius>0.15</radius><length>1.0</length></cylinder></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+    </link>
+    <link name='cyl_n1_2'>
+      <pose>-1.0 2.0 0.5 0 0 0</pose>
+      <collision name='col'><geometry><cylinder><radius>0.15</radius><length>1.0</length></cylinder></geometry></collision>
+      <visual name='vis'><geometry><cylinder><radius>0.15</radius><length>1.0</length></cylinder></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+    </link>
+    <link name='cyl_n1_n2'>
+      <pose>-1.0 -2.0 0.5 0 0 0</pose>
+      <collision name='col'><geometry><cylinder><radius>0.15</radius><length>1.0</length></cylinder></geometry></collision>
+      <visual name='vis'><geometry><cylinder><radius>0.15</radius><length>1.0</length></cylinder></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+    </link>
+
+    <!-- (±2,±1) - 4个 -->
+    <link name='cyl_2_1'>
+      <pose>2.0 1.0 0.5 0 0 0</pose>
+      <collision name='col'><geometry><cylinder><radius>0.15</radius><length>1.0</length></cylinder></geometry></collision>
+      <visual name='vis'><geometry><cylinder><radius>0.15</radius><length>1.0</length></cylinder></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+    </link>
+    <link name='cyl_2_n1'>
+      <pose>2.0 -1.0 0.5 0 0 0</pose>
+      <collision name='col'><geometry><cylinder><radius>0.15</radius><length>1.0</length></cylinder></geometry></collision>
+      <visual name='vis'><geometry><cylinder><radius>0.15</radius><length>1.0</length></cylinder></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+    </link>
+    <link name='cyl_n2_1'>
+      <pose>-2.0 1.0 0.5 0 0 0</pose>
+      <collision name='col'><geometry><cylinder><radius>0.15</radius><length>1.0</length></cylinder></geometry></collision>
+      <visual name='vis'><geometry><cylinder><radius>0.15</radius><length>1.0</length></cylinder></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+    </link>
+    <link name='cyl_n2_n1'>
+      <pose>-2.0 -1.0 0.5 0 0 0</pose>
+      <collision name='col'><geometry><cylinder><radius>0.15</radius><length>1.0</length></cylinder></geometry></collision>
+      <visual name='vis'><geometry><cylinder><radius>0.15</radius><length>1.0</length></cylinder></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+    </link>
+
+  </model>
+</sdf>

@@ -1,0 +1,156 @@
+<?xml version='1.0'?>
+<sdf version='1.6'>
+  <model name='Resizable_box'>
+    <static>true</static>
+    
+    <!-- 
+    设计说明（用户指定坐标）：
+    - 小车在(0,0)，朝向X轴正前方（0度）
+    - 四个外墙组成的正方形的四个顶点坐标：
+      - 顶点1: (-1, 0)  <- 小车位置
+      - 顶点2: (3, -4)
+      - 顶点3: (3, 4)
+      - 顶点4: (7, 0)
+    - 正方形中心在(3, 0)
+    - BOX中心也在(3, 0)，与正方形中心一致
+    - BOX的边和外面正方形是平行的（都是45度旋转）
+    - BOX宽度变化范围：1~2.5m
+    - BOX长度变化范围：0.5~2m
+    
+    计算：
+    - 边长：从(-1,0)到(3,4)，距离 = √((3-(-1))² + (4-0)²) = √(16+16) = 4√2 ≈ 5.66米
+    - 四个边的中点：
+      边1：从(-1,0)到(3,4)，中点 = (1.0, 2.0)
+      边2：从(3,4)到(7,0)，中点 = (5.0, 2.0)
+      边3：从(7,0)到(3,-4)，中点 = (5.0, -2.0)
+      边4：从(3,-4)到(-1,0)，中点 = (1.0, -2.0)
+    - 每条边的方向（用于旋转墙）：
+      边1：方向向量(4,4)，角度=atan2(4,4)=45度 = 0.785398弧度
+      边2：方向向量(4,-4)，角度=atan2(-4,4)=-45度 = -0.785398弧度
+      边3：方向向量(-4,-4)，角度=atan2(-4,-4)=-135度 = -2.356194弧度
+      边4：方向向量(-4,4)，角度=atan2(4,-4)=135度 = 2.356194弧度
+    -->
+    
+    <!-- BOX障碍物：中心在(3, 0)，旋转45度（与正方形边平行） -->
+    <!-- BOX尺寸：SIZE_X (长度 0.5~2m) × SIZE_Y (宽度 1.0~2.5m) -->
+    <!-- 注意：SIZE_X是长度，SIZE_Y是宽度，BOX旋转45度 -->
+    <link name='box'>
+      <pose>3.0 0.0 0.5 0 0 0.785398</pose>
+      <collision name='collision'>
+        <geometry>
+          <box>
+            <size>{SIZE_X} {SIZE_Y} 1.0</size>
+          </box>
+        </geometry>
+      </collision>
+      <visual name='visual'>
+        <geometry>
+          <box>
+            <size>{SIZE_X} {SIZE_Y} 1.0</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>1 1 1 1</ambient>
+          <diffuse>1 1 1 1</diffuse>
+        </material>
+      </visual>
+    </link>
+    
+    <!-- 外墙：四个墙分别位于正方形的四条边上 -->
+    <!-- 边长 = 4√2 ≈ 5.66米 -->
+    <!-- 墙的宽度设为0.2米 -->
+    
+    <!-- 边1：从(-1,0)到(3,4)，中点(1.0, 2.0)，方向45度 -->
+    <link name='wall_1'>
+      <pose>1.0 2.0 0.5 0 0 0.785398</pose>
+      <collision name='col'>
+        <geometry>
+          <box>
+            <size>5.66 0.2 1.0</size>
+          </box>
+        </geometry>
+      </collision>
+      <visual name='vis'>
+        <geometry>
+          <box>
+            <size>5.66 0.2 1.0</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>1 1 1 1</ambient>
+          <diffuse>1 1 1 1</diffuse>
+        </material>
+      </visual>
+    </link>
+    
+    <!-- 边2：从(3,4)到(7,0)，中点(5.0, 2.0)，方向-45度 -->
+    <link name='wall_2'>
+      <pose>5.0 2.0 0.5 0 0 -0.785398</pose>
+      <collision name='col'>
+        <geometry>
+          <box>
+            <size>5.66 0.2 1.0</size>
+          </box>
+        </geometry>
+      </collision>
+      <visual name='vis'>
+        <geometry>
+          <box>
+            <size>5.66 0.2 1.0</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>1 1 1 1</ambient>
+          <diffuse>1 1 1 1</diffuse>
+        </material>
+      </visual>
+    </link>
+    
+    <!-- 边3：从(7,0)到(3,-4)，中点(5.0, -2.0)，方向-135度 -->
+    <link name='wall_3'>
+      <pose>5.0 -2.0 0.5 0 0 -2.356194</pose>
+      <collision name='col'>
+        <geometry>
+          <box>
+            <size>5.66 0.2 1.0</size>
+          </box>
+        </geometry>
+      </collision>
+      <visual name='vis'>
+        <geometry>
+          <box>
+            <size>5.66 0.2 1.0</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>1 1 1 1</ambient>
+          <diffuse>1 1 1 1</diffuse>
+        </material>
+      </visual>
+    </link>
+    
+    <!-- 边4：从(3,-4)到(-1,0)，中点(1.0, -2.0)，方向135度 -->
+    <link name='wall_4'>
+      <pose>1.0 -2.0 0.5 0 0 2.356194</pose>
+      <collision name='col'>
+        <geometry>
+          <box>
+            <size>5.66 0.2 1.0</size>
+          </box>
+        </geometry>
+      </collision>
+      <visual name='vis'>
+        <geometry>
+          <box>
+            <size>5.66 0.2 1.0</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>1 1 1 1</ambient>
+          <diffuse>1 1 1 1</diffuse>
+        </material>
+      </visual>
+    </link>
+    
+  </model>
+</sdf>

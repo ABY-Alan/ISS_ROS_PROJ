@@ -1,0 +1,8 @@
+# Generate World
+export TURTLEBOT3_MODEL=waffle_pi
+ros2 launch turtlebot3_gazebo empty_world.launch.py
+
+# GitHub Upload
+git add .
+git commit -m "增加方形障碍测试"
+git push origin main

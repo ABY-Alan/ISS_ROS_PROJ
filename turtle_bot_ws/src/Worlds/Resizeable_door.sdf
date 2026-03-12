@@ -1,0 +1,171 @@
+<?xml version='1.0'?>
+<sdf version='1.6'>
+  <model name='Resizeable_door'>
+    <static>true</static>
+    
+    <!-- 
+    设计说明（与BOX场景外墙一致）：
+    - 小车在(0,0)，朝向X轴正前方（0度）
+    - 四个外墙组成的正方形的四个顶点坐标（与BOX场景完全一致）：
+      - 顶点1: (-1, 0)  <- 小车位置
+      - 顶点2: (3, -4)
+      - 顶点3: (3, 4)
+      - 顶点4: (7, 0)
+    - 正方形中心在(3, 0)
+    - 门墙：在(1,-2)和(5,2)之间，中间有开口
+    - 开口大小范围：[0.6m, 2.5m]
+    
+    计算：
+    - 外墙边长：4√2 ≈ 5.66米（与BOX场景一致）
+    - 门墙：从(1,-2)到(5,2)，长度 = 4√2 ≈ 5.66米，方向45度
+    - 门洞中心在(3, 0)
+    - 如果门宽是w，那么：
+      - 左墙长度：(5.66 - w) / 2
+      - 右墙长度：(5.66 - w) / 2
+      - 左墙中心：从(1,-2)开始，沿着45度方向，距离 (5.66 - w) / 4
+      - 右墙中心：从门洞中心开始，沿着45度方向，距离 (5.66 - w) / 4
+    -->
+    
+    <!-- 门的左墙（门洞左侧） -->
+    <link name='wall_left'>
+      <pose>{WALL_POS_X_LEFT} {WALL_POS_Y_LEFT} 0.5 0 0 0.785398</pose>
+      <collision name='col'>
+        <geometry>
+          <box>
+            <size>{WALL_LENGTH_LEFT} 0.2 1.0</size>
+          </box>
+        </geometry>
+      </collision>
+      <visual name='vis'>
+        <geometry>
+          <box>
+            <size>{WALL_LENGTH_LEFT} 0.2 1.0</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>1 1 1 1</ambient>
+          <diffuse>1 1 1 1</diffuse>
+        </material>
+      </visual>
+    </link>
+
+    <!-- 门的右墙（门洞右侧） -->
+    <link name='wall_right'>
+      <pose>{WALL_POS_X_RIGHT} {WALL_POS_Y_RIGHT} 0.5 0 0 0.785398</pose>
+      <collision name='col'>
+        <geometry>
+          <box>
+            <size>{WALL_LENGTH_RIGHT} 0.2 1.0</size>
+          </box>
+        </geometry>
+      </collision>
+      <visual name='vis'>
+        <geometry>
+          <box>
+            <size>{WALL_LENGTH_RIGHT} 0.2 1.0</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>1 1 1 1</ambient>
+          <diffuse>1 1 1 1</diffuse>
+        </material>
+      </visual>
+    </link>
+    
+    <!-- 外墙：四个墙分别位于正方形的四条边上（与BOX场景完全一致） -->
+    <!-- 边长 = 4√2 ≈ 5.66米 -->
+    
+    <!-- 边1：从(-1,0)到(3,4)，中点(1.0, 2.0)，方向45度 -->
+    <link name='wall_1'>
+      <pose>1.0 2.0 0.5 0 0 0.785398</pose>
+      <collision name='col'>
+        <geometry>
+          <box>
+            <size>5.66 0.2 1.0</size>
+          </box>
+        </geometry>
+      </collision>
+      <visual name='vis'>
+        <geometry>
+          <box>
+            <size>5.66 0.2 1.0</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>1 1 1 1</ambient>
+          <diffuse>1 1 1 1</diffuse>
+        </material>
+      </visual>
+    </link>
+    
+    <!-- 边2：从(3,4)到(7,0)，中点(5.0, 2.0)，方向-45度 -->
+    <link name='wall_2'>
+      <pose>5.0 2.0 0.5 0 0 -0.785398</pose>
+      <collision name='col'>
+        <geometry>
+          <box>
+            <size>5.66 0.2 1.0</size>
+          </box>
+        </geometry>
+      </collision>
+      <visual name='vis'>
+        <geometry>
+          <box>
+            <size>5.66 0.2 1.0</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>1 1 1 1</ambient>
+          <diffuse>1 1 1 1</diffuse>
+        </material>
+      </visual>
+    </link>
+    
+    <!-- 边3：从(7,0)到(3,-4)，中点(5.0, -2.0)，方向-135度 -->
+    <link name='wall_3'>
+      <pose>5.0 -2.0 0.5 0 0 -2.356194</pose>
+      <collision name='col'>
+        <geometry>
+          <box>
+            <size>5.66 0.2 1.0</size>
+          </box>
+        </geometry>
+      </collision>
+      <visual name='vis'>
+        <geometry>
+          <box>
+            <size>5.66 0.2 1.0</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>1 1 1 1</ambient>
+          <diffuse>1 1 1 1</diffuse>
+        </material>
+      </visual>
+    </link>
+    
+    <!-- 边4：从(3,-4)到(-1,0)，中点(1.0, -2.0)，方向135度 -->
+    <link name='wall_4'>
+      <pose>1.0 -2.0 0.5 0 0 2.356194</pose>
+      <collision name='col'>
+        <geometry>
+          <box>
+            <size>5.66 0.2 1.0</size>
+          </box>
+        </geometry>
+      </collision>
+      <visual name='vis'>
+        <geometry>
+          <box>
+            <size>5.66 0.2 1.0</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>1 1 1 1</ambient>
+          <diffuse>1 1 1 1</diffuse>
+        </material>
+      </visual>
+    </link>
+
+  </model>
+</sdf>

@@ -16,24 +16,27 @@ from geometry_msgs.msg import Twist
 # --- 数据记录器类 ---
 
 class DataRecorder:
-    def __init__(self, filename="experiment_all_goals.csv"):
+    def __init__(self, filename="experiment_all_goals.csv", extra_fields: Optional[list] = None):
         # 记录器只在初始化时创建文件并写入表头
         self.filename = filename
+        self.extra_fields = extra_fields if extra_fields is not None else []
         self.header = [
             "timestamp", "goal_name", # 新增 goal_name 用于区分
             "goal_x", "goal_y", "ux", "uy", "pos_x", "pos_y", "yaw", "vel_v", "vel_w"
-        ]
+        ] + self.extra_fields
         with open(self.filename, mode='w', newline='') as f:
             writer = csv.writer(f)
             writer.writerow(self.header)
         print(f"[Recorder] 连续数据记录已启动，文件: {self.filename}")
 
-    def record(self, goal_name, goal_x, goal_y, ux, uy, pose, v, w):
+    def record(self, goal_name, goal_x, goal_y, ux, uy, pose, v, w, extra_data: Optional[Dict[str, Any]] = None):
         if pose is None: return
         x, y, yaw = pose
+        extra_data = extra_data if extra_data is not None else {}
+        extra_values = [extra_data.get(field, "") for field in self.extra_fields]
         with open(self.filename, mode='a', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow([time.time(), goal_name, goal_x, goal_y, ux, uy, x, y, yaw, v, w])
+            writer.writerow([time.time(), goal_name, goal_x, goal_y, ux, uy, x, y, yaw, v, w] + extra_values)
             
 def quat_to_yaw(x: float, y: float, z: float, w: float) -> float:
     return math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
@@ -57,6 +60,8 @@ class _GoalTracker(Node):
         # 兼容 control_policy 中的调用方式
         self._last_scan = {
             "ranges": msg.ranges,
+            "angle_min": msg.angle_min,
+            "angle_increment": msg.angle_increment,
             "range_min": msg.range_min,
             "range_max": msg.range_max
         }
@@ -72,58 +77,6 @@ class _GoalTracker(Node):
 
     def stop_robot(self):
         self.send_velocity(0.0, 0.0)
-
-# ===== 保持不变的控制策略函数 =====
-def control_policy_no_model_with_noise(
-    x: float,
-    y: float,
-    yaw: float,
-    gx: float,
-    gy: float,
-    scan: Dict[str, Any],
-) -> Tuple[float, float]:
-    dx = gx - x
-    dy = gy - y
-    goal_yaw = math.atan2(dy, dx)
-    angle_error = goal_yaw - yaw
-    angle_error = math.atan2(math.sin(angle_error), math.cos(angle_error))
-
-    k_w = 2.0
-    max_w = 1.5
-    w = max(-max_w, min(max_w, k_w * angle_error))
-
-    ranges = scan["ranges"]
-    rmin = scan["range_min"]
-    rmax = scan["range_max"]
-
-    valid = [r for r in ranges if (r is not None) and math.isfinite(r) and (rmin <= r <= rmax)]
-    avg_dist = (sum(valid) / len(valid)) if valid else rmax
-
-    stop_dist = 0.35
-    full_dist = 1.20
-    v_max = 0.22
-    v_min = 0.0
-    angle_threshold = 0.35
-
-    if abs(angle_error) > angle_threshold:
-        v = 0.0
-    elif avg_dist <= stop_dist:
-        v = 0.0
-    elif avg_dist >= full_dist:
-        v = v_max
-    else:
-        ratio = (avg_dist - stop_dist) / (full_dist - stop_dist)
-        v = v_min + ratio * (v_max - v_min)
-
-    v_noise_std = 0.5
-    w_noise_std = 0.3
-    v += random.gauss(0.0, v_noise_std)
-    w += random.gauss(0.0, w_noise_std)
-
-    v = max(0.0, min(v_max, v))
-    w = max(-max_w, min(max_w, w))
-
-    return float(v), float(w)
 
 
 _PPO_ACTOR = None
@@ -276,13 +229,22 @@ def track_single_goal(
     reach_threshold_m: float = 0.25,
     timeout_sec: float = 60.0,
     control_rate_hz: float = 10.0,
+    collision_fail_distance_m: float = 0.3,
+    scene_data: Optional[Dict[str, Any]] = None,
 ) -> bool:
     if not rclpy.ok(): rclpy.init()
     _reset_ppo_control_state()
+    if scene_data is None:
+        scene_data = {}
+    scene_data.setdefault("collision_happened", 0)
     
     node = _GoalTracker()
     gx, gy = float(goal_xy[0]), float(goal_xy[1])
     start_time = time.time()
+    collision_grace_period_sec = 1.0
+    collision_confirm_count = 3
+    front_half_angle_rad = 0.70
+    consecutive_collision_hits = 0
     
     try:
         while rclpy.ok():
@@ -295,6 +257,49 @@ def track_single_goal(
             pose = node.get_pose()
             scan = node.get_scan()
             if pose is None or scan is None: continue
+
+            ranges = scan.get("ranges", [])
+            angle_min = float(scan.get("angle_min", -math.pi))
+            angle_increment = float(scan.get("angle_increment", 0.0))
+            rmin = float(scan.get("range_min", 0.0))
+            rmax = float(scan.get("range_max", float("inf")))
+
+            # 仅在前向扇区检测碰撞，避免刚生成时个别侧向/异常近距射线导致误判
+            front_collision_valid = []
+            for idx, raw_range in enumerate(ranges):
+                if raw_range is None or (not math.isfinite(raw_range)):
+                    continue
+                angle = angle_min + idx * angle_increment
+                if abs(angle) > front_half_angle_rad:
+                    continue
+                dist = float(raw_range)
+                if 0.0 < dist <= rmax:
+                    front_collision_valid.append(dist)
+
+            min_dist = min(front_collision_valid) if front_collision_valid else float("inf")
+            effective_collision_threshold = max(collision_fail_distance_m, rmin)
+
+            if (time.time() - start_time) >= collision_grace_period_sec and min_dist <= effective_collision_threshold:
+                consecutive_collision_hits += 1
+            else:
+                consecutive_collision_hits = 0
+
+            if consecutive_collision_hits >= collision_confirm_count:
+                node.stop_robot()
+                scene_data["collision_happened"] = 1
+                # 记录碰撞时刻，便于后续按行筛选碰撞样本
+                x, y, yaw = pose
+                dx, dy = gx - x, gy - y
+                angle_to_goal = math.atan2(dy, dx) - yaw
+                angle_to_goal = math.atan2(math.sin(angle_to_goal), math.cos(angle_to_goal))
+                ux = math.cos(angle_to_goal)
+                uy = math.sin(angle_to_goal)
+                recorder.record(goal_name, gx, gy, ux, uy, pose, 0.0, 0.0, extra_data=scene_data)
+                print(
+                    f"失败: {goal_name} 检测到碰撞"
+                    f"（min_scan={min_dist:.3f}m, threshold={effective_collision_threshold:.3f}m）"
+                )
+                return False
 
             x, y, yaw = pose
             dist = math.hypot(gx - x, gy - y)
@@ -318,7 +323,7 @@ def track_single_goal(
             v, w = control_policy_model_ppo_ckpt(x, y, yaw, gx, gy, scan)
             
             # --- 关键：使用传入的 recorder 记录数据，带上 goal_name ---
-            recorder.record(goal_name, gx, gy, ux, uy, pose, v, w)
+            recorder.record(goal_name, gx, gy, ux, uy, pose, v, w, extra_data=scene_data)
 
             node.send_velocity(v, w)
             time.sleep(1.0 / control_rate_hz)
