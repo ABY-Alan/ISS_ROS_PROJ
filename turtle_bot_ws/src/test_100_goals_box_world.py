@@ -12,7 +12,8 @@ from gazebo_msgs.srv import SpawnEntity, DeleteEntity, GetModelList
 from ament_index_python.packages import get_package_share_directory
 
 from gazebo_goal_point import spawn_goal_point, delete_all_goals
-from chase_goal_record_data import track_single_goal, DataRecorder
+# from chase_goal_record_data import track_single_goal, DataRecorder
+from chase_goal_record_data_ppo_final import track_single_goal, DataRecorder
 
 
 # --- 配置参数 ---
@@ -41,6 +42,7 @@ ROBOT_RESPAWN_Z = 0.01
 BOX_MODEL_NAME = "resizable_box_world"
 ROBOT_ENTITY_NAME = "tb3_trial_bot"
 ROBOT_DELETE_KEYWORDS = ["turtlebot3", "waffle", "burger", "tb3_trial_bot"]
+PRESERVED_MODEL_NAMES = {"ground_plane", "sun"}
 SCENE_EXTRA_FIELDS = [
 	"trial_id",
 	"box_size_x",
@@ -395,6 +397,38 @@ def delete_existing_robot_models():
 		node.destroy_node()
 
 
+def clear_all_world_models(preserved_model_names: Optional[set] = None):
+	"""清空world里除保留名单外的所有模型，避免场景切换残留重叠。"""
+	preserved = preserved_model_names or PRESERVED_MODEL_NAMES
+	node = Node("clear_all_world_models_node")
+	try:
+		get_cli = node.create_client(GetModelList, "/get_model_list")
+		if not get_cli.wait_for_service(timeout_sec=5.0):
+			raise RuntimeError("/get_model_list service not available")
+
+		fut = get_cli.call_async(GetModelList.Request())
+		rclpy.spin_until_future_complete(node, fut, timeout_sec=10.0)
+		res = fut.result()
+		if res is None:
+			raise RuntimeError("GetModelList调用失败")
+
+		targets = [name for name in res.model_names if name not in preserved]
+		if not targets:
+			return
+
+		del_cli = node.create_client(DeleteEntity, "/delete_entity")
+		if not del_cli.wait_for_service(timeout_sec=5.0):
+			raise RuntimeError("/delete_entity service not available")
+
+		for name in targets:
+			req = DeleteEntity.Request()
+			req.name = name
+			del_fut = del_cli.call_async(req)
+			rclpy.spin_until_future_complete(node, del_fut, timeout_sec=10.0)
+	finally:
+		node.destroy_node()
+
+
 def spawn_robot_entity(robot_x: float, robot_y: float, robot_yaw: float):
 	"""按给定位姿重生机器人。"""
 	node = Node("spawn_robot_entity_node")
@@ -448,8 +482,8 @@ def main():
 	rclpy.init()
 
 	try:
+		clear_all_world_models()
 		delete_all_goals()
-		delete_model_if_exists(BOX_MODEL_NAME)
 
 		base_file_name = "Output_PPO_Ckpt_Box_World_Test_100.csv"
 		output_dir = os.path.join(os.path.dirname(__file__), "Models", "Outputs")
@@ -467,9 +501,8 @@ def main():
 		print(f"开始进行 {NUM_TRIALS} 轮 box_world 随机目标追踪实验...")
 
 		for i in range(1, NUM_TRIALS + 1):
+			clear_all_world_models()
 			delete_all_goals()
-			delete_model_if_exists(BOX_MODEL_NAME)
-			delete_existing_robot_models()
 
 			box_size_x, box_size_y = sample_safe_box_size()
 			robot_x, robot_y, robot_yaw = sample_safe_robot_pose(box_size_x, box_size_y)
@@ -539,9 +572,8 @@ def main():
 
 	finally:
 		try:
+			clear_all_world_models()
 			delete_all_goals()
-			delete_model_if_exists(BOX_MODEL_NAME)
-			delete_existing_robot_models()
 		except Exception as e:
 			print(f"收尾清理时出现异常: {e}")
 		rclpy.shutdown()

@@ -1,0 +1,1 @@
+timestamp,goal_name,goal_x,goal_y,ux,uy,pos_x,pos_y,yaw,vel_v,vel_w,trial_id,box_size_x,box_size_y,box_yaw_rad,robot_start_x,robot_start_y,robot_start_yaw,box_center_x,box_center_y,world_center_x,world_center_y,world_l1_radius,world_margin,collision_fail_distance_m,collision_happened,robot_clearance_to_box_m,robot_clearance_to_wall_m
