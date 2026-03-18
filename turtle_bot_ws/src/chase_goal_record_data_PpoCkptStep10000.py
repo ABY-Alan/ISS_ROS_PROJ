@@ -170,9 +170,12 @@ def control_policy_model_ppo_ckpt(
     global _PPO_LAST_ACTION
 
     if ckpt_path is None:
-        ckpt_path = os.path.join(
-            os.path.dirname(__file__), "Models", "ppo_ckpt_step_10000.pth"
-        )
+        models_dir = os.path.join(os.path.dirname(__file__), "Models")
+        candidates = [
+            os.path.join(models_dir, "model_2_ppo_ckpt_step_10000.pth"),
+            os.path.join(models_dir, "ppo_ckpt_step_10000.pth"),
+        ]
+        ckpt_path = next((path for path in candidates if os.path.exists(path)), candidates[0])
 
     actor, device = _load_ppo_actor(ckpt_path)
 

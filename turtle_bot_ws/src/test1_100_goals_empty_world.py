@@ -24,6 +24,12 @@ def get_unique_filename(output_dir: str, base_filename: str) -> str:
 
     return candidate
 
+def _format_seconds(seconds: float) -> str:
+    total_seconds = max(0, int(seconds))
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
 def StartTest_EmptyWorld(ModelName: str, NUM_TRIALS: int = 200):
     
     if ModelName == "Model_1_PPO_Ckpt_Step_10000":
@@ -62,8 +68,11 @@ def StartTest_EmptyWorld(ModelName: str, NUM_TRIALS: int = 200):
     recorder = DataRecorderCls(filename=os.path.join(output_dir, file_name))
     
     print(f"开始进行 {NUM_TRIALS} 轮随机目标追踪实验...")
-    
+    total_start_time = time.perf_counter()
+
     for i in range(1, NUM_TRIALS + 1):
+        round_start_time = time.perf_counter()
+
         # 3. 随机生成目标点坐标
         random_x = random.uniform(-MAP_SIZE_X, MAP_SIZE_X)
         random_y = random.uniform(-MAP_SIZE_Y, MAP_SIZE_Y)
@@ -96,6 +105,15 @@ def StartTest_EmptyWorld(ModelName: str, NUM_TRIALS: int = 200):
         # 6. 删除当前目标点，准备下一轮
         delete_all_goals()
 
+        round_elapsed = time.perf_counter() - round_start_time
+        total_elapsed = time.perf_counter() - total_start_time
+
+        print(
+            f"耗时统计: "
+            f"本轮={_format_seconds(round_elapsed)} | "
+            f"累计={_format_seconds(total_elapsed)} | "
+        )
+        
     print(f"\n所有实验已完成。数据记录在 '{os.path.join(output_dir, file_name)}' 中。\n")
     rclpy.shutdown()
 

@@ -4,6 +4,7 @@
 import os
 import random
 import math
+import time
 from typing import Tuple, Optional, Any, Callable
 
 import rclpy
@@ -72,6 +73,13 @@ def get_unique_filename(output_dir: str, base_filename: str) -> str:
 		candidate = f"{name}_{index}{ext}"
 
 	return candidate
+
+
+def _format_seconds(seconds: float) -> str:
+	total_seconds = max(0, int(seconds))
+	hours, remainder = divmod(total_seconds, 3600)
+	minutes, secs = divmod(remainder, 60)
+	return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
 
 def _rotate_world_to_local(dx: float, dy: float, yaw: float) -> Tuple[float, float]:
@@ -519,8 +527,10 @@ def StartTest_BoxWorld(ModelName: str, NUM_TRIALS: int = 200):
 			raise FileNotFoundError(f"未找到SDF模板文件: {sdf_template_path}")
 
 		print(f"开始进行 {NUM_TRIALS} 轮 box_world 随机目标追踪实验...")
+		total_start_time = time.perf_counter()
 
 		for i in range(1, NUM_TRIALS + 1):
+			round_start_time = time.perf_counter()
 			clear_all_world_models()
 			delete_all_goals()
 
@@ -589,6 +599,15 @@ def StartTest_BoxWorld(ModelName: str, NUM_TRIALS: int = 200):
 				print(f"失败: {goal_name} 未到达")
 
 			delete_all_goals()
+
+			round_elapsed = time.perf_counter() - round_start_time
+			total_elapsed = time.perf_counter() - total_start_time
+
+			print(
+				f"耗时统计: "
+				f"本轮={_format_seconds(round_elapsed)} | "
+				f"累计={_format_seconds(total_elapsed)} | "
+			)
 
 		print(f"\n所有实验已完成。数据记录在 '{os.path.join(output_dir, file_name)}' 中。\n")
 
