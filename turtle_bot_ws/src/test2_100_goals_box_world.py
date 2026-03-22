@@ -489,20 +489,26 @@ def StartTest_BoxWorld(ModelName: str, NUM_TRIALS: int = 200):
 			track_single_goal as _track_single_goal,
 			DataRecorder as _DataRecorder,
 		)
-		base_file_name = "Output_Model_1_PPO_Ckpt_Box_World_Test_100.csv"
-	elif ModelName == "Model_2_PPO_Ckpt_Step_10000":
-		from chase_goal_record_data_PpoCkptStep10000 import (
+		base_file_name = "Output_Model_1_PPO_Ckpt_Box_World_Test.csv"
+	elif ModelName == "Model_2_Supervised_Ckpt_Step_200000":
+		from chase_goal_record_data_Model2SupervisedSkptStep20000 import (
 			track_single_goal as _track_single_goal,
 			DataRecorder as _DataRecorder,
 		)
-		base_file_name = "Output_Model_2_PPO_Ckpt_Box_World_Test_100.csv"
+		base_file_name = "Output_Model_2_PPO_Ckpt_Box_World_Test.csv"
+	elif ModelName == "Model_3_PPO_Ckpt_Step_740000":
+		from chase_goal_record_data_Model3PpoCkptStep740000 import (
+			track_single_goal as _track_single_goal,
+			DataRecorder as _DataRecorder,
+		)
+		base_file_name = "Output_Model_3_PPO_Ckpt_Box_World_Test.csv"
 	else:
 		# default to Model 1 if unknown model name is provided
 		from chase_goal_record_data_Model1PpoCkptStep10000 import (
 			track_single_goal as _track_single_goal,
 			DataRecorder as _DataRecorder,
 		)
-		base_file_name = "Output_Model_1_PPO_Ckpt_Box_World_Test_100.csv"
+		base_file_name = "Output_Model_1_PPO_Ckpt_Box_World_Test.csv"
 
 	# 统一引用，避免分支导入后产生 Union 类型冲突。
 	track_single_goal_fn: Callable[..., bool] = _track_single_goal

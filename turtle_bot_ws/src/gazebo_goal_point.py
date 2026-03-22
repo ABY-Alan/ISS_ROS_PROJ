@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from typing import Tuple
+from typing import Tuple, cast
 import rclpy
 from rclpy.node import Node
 from gazebo_msgs.srv import SpawnEntity
@@ -29,7 +29,7 @@ _SDF_SPHERE = """<?xml version="1.0" ?>
 """
 
 
-def spawn_goal_point(x: float, y: float, z: float = 0.2, name: str = "goal_point") -> Tuple[float, float, float]:
+def spawn_goal_point(x: float, y: float, z: float = 0.2, name: str = "goal_point") -> Tuple[float, float]:
     """
     Spawn a simple static sphere marker in Gazebo at (x, y, z) and return (x, y, z).
     Requires Gazebo running with gazebo_ros service /spawn_entity available.
@@ -86,7 +86,10 @@ def delete_all_goals(keyword: str = "goal"):
     if fut.result() is None:
         raise RuntimeError("Failed to get model list")
 
-    model_names = fut.result().model_names
+    result = fut.result()
+    if result is None:
+      raise RuntimeError("Failed to get model list")
+    model_names = cast(GetModelList.Response, result).model_names
 
     # 删除包含 keyword 的模型
     delete_cli = node.create_client(DeleteEntity, "/delete_entity")

@@ -3,7 +3,7 @@ model_1_ppo_ckpt_step_10000.pth:
     调用：Model_1_PPO_Ckpt_Step_10000
     输出：Output_Model_1_PPO_Ckpt_Empty_World_Test_100_5
 
-model_2_ppo_ckpt_step_10000.pth:
-    冯同学发的第二个
-    调用：Model_2_PPO_Ckpt_Step_10000
-    输出：Output_Model_2_PPO_Ckpt_Empty_World_Test_100
+model_2_supervised_ckpt_step_200000.pth:
+    原名：supervised_ckpt_step_200000.pth
+    调用：model_2_supervised_ckpt_step_200000.pth
+    
