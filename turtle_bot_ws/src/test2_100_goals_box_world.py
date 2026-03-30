@@ -495,7 +495,7 @@ def StartTest_BoxWorld(ModelName: str, NUM_TRIALS: int = 200):
 			track_single_goal as _track_single_goal,
 			DataRecorder as _DataRecorder,
 		)
-		base_file_name = "Output_Model_2_PPO_Ckpt_Box_World_Test.csv"
+		base_file_name = "Output_Model_2_Supervised_Ckpt_Box_World_Test.csv"
 	elif ModelName == "Model_3_PPO_Ckpt_Step_740000":
 		from chase_goal_record_data_Model3PpoCkptStep740000 import (
 			track_single_goal as _track_single_goal,
