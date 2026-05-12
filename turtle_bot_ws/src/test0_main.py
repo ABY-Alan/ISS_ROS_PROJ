@@ -17,7 +17,8 @@ NUM_TRIALS_PER_TEST = 200
 # StartTest_BoxWorld("Model_3_PPO_Ckpt_Step_740000", NUM_TRIALS=NUM_TRIALS_PER_TEST)
 # StartTest_DoorWorld("Model_3_PPO_Ckpt_Step_740000", NUM_TRIALS=NUM_TRIALS_PER_TEST)
 # StartTest_EmptyWorld("Model_3_PPO_Ckpt_Step_740000", NUM_TRIALS=NUM_TRIALS_PER_TEST)
-StartTest_BoxWorld("Model_3_PPO_Ckpt_Step_740000", NUM_TRIALS=NUM_TRIALS_PER_TEST)
-StartTest_BoxWorld("Model_3_PPO_Ckpt_Step_740000", NUM_TRIALS=NUM_TRIALS_PER_TEST)
-StartTest_BoxWorld("Model_3_PPO_Ckpt_Step_740000", NUM_TRIALS=NUM_TRIALS_PER_TEST)
+
+# StartTest_BoxWorld("Model_3_PPO_Ckpt_Step_740000", NUM_TRIALS=NUM_TRIALS_PER_TEST)
+# StartTest_BoxWorld("Model_3_PPO_Ckpt_Step_740000", NUM_TRIALS=NUM_TRIALS_PER_TEST)
+# StartTest_BoxWorld("Model_3_PPO_Ckpt_Step_740000", NUM_TRIALS=NUM_TRIALS_PER_TEST)
 # StartTest_DoorWorld("Model_3_PPO_Ckpt_Step_740000", NUM_TRIALS=NUM_TRIALS_PER_TEST)
