@@ -533,57 +533,64 @@ def spawn_door_world_obstacle(sdf_template_path: str, door_gap_width: float, mod
 	finally:
 		node.destroy_node()
 
+def _parse_track_result(result: Any) -> bool:
+	if isinstance(result, dict):
+		return bool(result.get("success", False))
+	return bool(result)
+
+
+def _get_status(result: Any) -> str:
+	if isinstance(result, dict):
+		return str(result.get("status", "failed"))
+	return "success" if bool(result) else "failed"
+
+
+MODEL_NAMES = [
+	"simple_fc_sft",
+	"cnn_lstm_sft_nodoor",
+	"cnn_lstm_sft",
+	"cnn_gru_sft",
+	"fc_lstm_sft",
+]
+
 
 def StartTest_DoorWorld(ModelName: str, NUM_TRIALS: int = 100):
-	if ModelName == "Model_1_PPO_Ckpt_Step_10000":
-		from chase_goal_record_data_Model1PpoCkptStep10000 import (
-			track_single_goal as _track_single_goal,
-			DataRecorder as _DataRecorder,
-		)
-		base_file_name = "Output_Model_1_PPO_Ckpt_Door_World_Test.csv"
-	elif ModelName == "Model_2_Supervised_Ckpt_Step_200000":
-		from chase_goal_record_data_Model2SupervisedSkptStep20000 import (
-			track_single_goal as _track_single_goal,
-			DataRecorder as _DataRecorder,
-		)
-		base_file_name = "Output_Model_2_PPO_Ckpt_Door_World_Test.csv"
-	elif ModelName == "Model_3_PPO_Ckpt_Step_740000":
-		from chase_goal_record_data_Model3PpoCkptStep740000 import (
-            track_single_goal as _track_single_goal,
-            DataRecorder as _DataRecorder,
-        )
-		base_file_name = "Output_Model_3_PPO_Ckpt_Door_World_Test.csv"
-	else:
-		# default to Model 1 if unknown model name is provided
-		from chase_goal_record_data_Model1PpoCkptStep10000 import (
-			track_single_goal as _track_single_goal,
-			DataRecorder as _DataRecorder,
-		)
-		base_file_name = "Output_Model_1_PPO_Ckpt_Door_World_Test.csv"
+	from chase_goal_record_data_5_models import (
+		track_single_goal as _track_single_goal,
+		DataRecorder as _DataRecorder,
+	)
 
-	# 统一引用，避免分支导入后产生 Union 类型冲突。
-	track_single_goal_fn: Callable[..., bool] = _track_single_goal
+	track_single_goal_fn: Callable[..., dict] = _track_single_goal
 	DataRecorderCls: type[Any] = _DataRecorder
 
-	rclpy.init()
+	if not rclpy.ok():
+		rclpy.init()
 
 	try:
 		clear_all_world_models()
 		delete_all_goals()
 
-		output_dir = os.path.join(os.path.dirname(__file__), "Models", "Outputs")
+		script_dir = os.path.dirname(__file__)
+		ckpt_dir = os.path.join(script_dir, "Models")
+		output_dir = os.path.join(script_dir, "Models", "Outputs")
 		os.makedirs(output_dir, exist_ok=True)
+
+		base_file_name = f"Output_{ModelName}_Door_World_Test.csv"
 		file_name = get_unique_filename(output_dir, base_file_name)
+		output_path = os.path.join(output_dir, file_name)
+
 		recorder = DataRecorderCls(
-			filename=os.path.join(output_dir, file_name),
-			extra_fields=SCENE_EXTRA_FIELDS,
+			filename=output_path,
+			extra_fields=SCENE_EXTRA_FIELDS + ["model_name", "world_name"],
 		)
 
-		sdf_template_path = os.path.join(os.path.dirname(__file__), "Worlds", "Resizable_door_writable.sdf")
+		sdf_template_path = os.path.join(script_dir, "Worlds", "Resizable_door_writable.sdf")
 		if not os.path.exists(sdf_template_path):
 			raise FileNotFoundError(f"未找到SDF模板文件: {sdf_template_path}")
 
 		print(f"开始进行 {NUM_TRIALS} 轮 door_world 随机目标追踪实验...")
+		print(f"当前模型: {ModelName}")
+		print(f"输出文件: {output_path}")
 		total_start_time = time.perf_counter()
 
 		for i in range(1, NUM_TRIALS + 1):
@@ -611,58 +618,62 @@ def StartTest_DoorWorld(ModelName: str, NUM_TRIALS: int = 100):
 			goal_name = f"door_goal_{i}"
 
 			print(
-				f"\n--- 第{i}/{NUM_TRIALS}轮 ---",
-				f"\n{ModelName}",
-				"\nDOOR WORLD",
-				# f"\nrobot ({robot_x:.2f}, {robot_y:.2f}, yaw={robot_yaw:.2f})",
-				f"\n{goal_name} ({random_x:.2f}, {random_y:.2f})",
+				f"\n--- 第{i}/{NUM_TRIALS}轮 ---"
+				f"\n模型: {ModelName}"
+				"\n场景: DOOR WORLD"
+				f"\nrobot ({robot_x:.2f}, {robot_y:.2f}, yaw={robot_yaw:.2f})"
+				f"\n{goal_name} ({random_x:.2f}, {random_y:.2f})"
 				f"\ndoor_gap={door_gap_width:.2f}, wall_len={wall_len:.2f}"
 			)
 
 			spawn_goal_point(random_x, random_y, 0.2, name=goal_name)
 
-			reached = track_single_goal_fn(
+			scene_data = {
+				"trial_id": i,
+				"door_gap_width": round(door_gap_width, 4),
+				"door_wall_length_left": round(wall_len, 4),
+				"door_wall_length_right": round(wall_len, 4),
+				"robot_start_x": round(robot_x, 4),
+				"robot_start_y": round(robot_y, 4),
+				"robot_start_yaw": round(robot_yaw, 4),
+				"world_center_x": WORLD_CENTER_X,
+				"world_center_y": WORLD_CENTER_Y,
+				"world_l1_radius": WORLD_L1_RADIUS,
+				"world_margin": WORLD_MARGIN,
+				"collision_fail_distance_m": COLLISION_FAIL_DISTANCE_M,
+				"collision_happened": 0,
+				"robot_clearance_to_wall_m": round(robot_clearance_to_wall, 4),
+				"model_name": ModelName,
+				"world_name": "door_world",
+			}
+
+			result = track_single_goal_fn(
 				goal_xy=(random_x, random_y),
 				recorder=recorder,
 				goal_name=goal_name,
+				model_name=ModelName,
+				ckpt_dir=ckpt_dir,
 				timeout_sec=TIMEOUT_PER_GOAL,
 				reach_threshold_m=0.3,
 				collision_fail_distance_m=COLLISION_FAIL_DISTANCE_M,
-				scene_data={
-					"trial_id": i,
-					"door_gap_width": round(door_gap_width, 4),
-					"door_wall_length_left": round(wall_len, 4),
-					"door_wall_length_right": round(wall_len, 4),
-					"robot_start_x": round(robot_x, 4),
-					"robot_start_y": round(robot_y, 4),
-					"robot_start_yaw": round(robot_yaw, 4),
-					"world_center_x": WORLD_CENTER_X,
-					"world_center_y": WORLD_CENTER_Y,
-					"world_l1_radius": WORLD_L1_RADIUS,
-					"world_margin": WORLD_MARGIN,
-					"collision_fail_distance_m": COLLISION_FAIL_DISTANCE_M,
-					"collision_happened": 0,
-					"robot_clearance_to_wall_m": round(robot_clearance_to_wall, 4),
-				},
+				scene_data=scene_data,
 			)
 
-			if reached:
+			if _parse_track_result(result):
 				print(f"成功: {goal_name} 已到达")
 			else:
-				print(f"失败: {goal_name} 未到达")
+				print(f"失败: {goal_name} 未到达, status={_get_status(result)}")
 
 			delete_all_goals()
-
 			round_elapsed = time.perf_counter() - round_start_time
 			total_elapsed = time.perf_counter() - total_start_time
-
 			print(
 				f"耗时统计: "
 				f"本轮={_format_seconds(round_elapsed)} | "
 				f"累计={_format_seconds(total_elapsed)} | "
 			)
 
-		print(f"\n所有实验已完成。数据记录在 '{os.path.join(output_dir, file_name)}' 中。\n")
+		print(f"\n所有实验已完成。数据记录在 '{output_path}' 中。\n")
 
 	finally:
 		try:
@@ -673,6 +684,9 @@ def StartTest_DoorWorld(ModelName: str, NUM_TRIALS: int = 100):
 		rclpy.shutdown()
 
 
-# if __name__ == "__main__":
-# 	StartTest_DoorWorld("Model_1_PPO_Ckpt_Step_10000")
-# 	StartTest_DoorWorld("Model_2_PPO_Ckpt_Step_10000")
+if __name__ == "__main__":
+	StartTest_DoorWorld("simple_fc_sft", NUM_TRIALS=100)
+
+	# 批量跑 5 个模型时，注释上面一行，取消下面注释：
+	# for model_name in MODEL_NAMES:
+	# 	StartTest_DoorWorld(model_name, NUM_TRIALS=100)

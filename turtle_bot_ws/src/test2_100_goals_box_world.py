@@ -626,6 +626,6 @@ def StartTest_BoxWorld(ModelName: str, NUM_TRIALS: int = 200):
 		rclpy.shutdown()
 
 
-if __name__ == "__main__":
-	StartTest_BoxWorld("Model_1_PPO_Ckpt_Step_10000")
-	StartTest_BoxWorld("Model_2_PPO_Ckpt_Step_10000")
+# if __name__ == "__main__":
+# 	StartTest_BoxWorld("Model_1_PPO_Ckpt_Step_10000")
+# 	StartTest_BoxWorld("Model_2_PPO_Ckpt_Step_10000")

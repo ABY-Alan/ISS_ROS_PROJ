@@ -16,7 +16,7 @@ from gazebo_goal_point import spawn_goal_point, delete_all_goals
 
 
 # --- 配置参数 ---
-TIMEOUT_PER_GOAL = 120.0  # 每个目标的追踪超时时间（秒）
+TIMEOUT_PER_GOAL = 300.0
 
 # 外部菱形墙区域: |x - 3| + |y| <= 4
 WORLD_CENTER_X = 3.0
@@ -24,14 +24,12 @@ WORLD_CENTER_Y = 0.0
 WORLD_L1_RADIUS = 4.0
 WORLD_MARGIN = 0.45
 
-DOOR_GAP_WIDTH_MIN = 0.6
-DOOR_GAP_WIDTH_MAX = 2.5
-DOOR_SEGMENT_START_X = 1.0
-DOOR_SEGMENT_START_Y = -2.0
-DOOR_SEGMENT_END_X = 5.0
-DOOR_SEGMENT_END_Y = 2.0
-DOOR_TOTAL_LENGTH = math.hypot(DOOR_SEGMENT_END_X - DOOR_SEGMENT_START_X, DOOR_SEGMENT_END_Y - DOOR_SEGMENT_START_Y)
-DOOR_WALL_THICKNESS = 0.2
+# 可变BOX尺寸范围（与 SDF 注释一致）
+BOX_SIZE_X_MIN = 0.5
+BOX_SIZE_X_MAX = 2.0
+BOX_SIZE_Y_MIN = 1.0
+BOX_SIZE_Y_MAX = 2.5
+BOX_YAW_RAD = 0.785398  # 45度
 ROBOT_START_X = 0.0
 ROBOT_START_Y = 0.0
 ROBOT_BODY_RADIUS = 0.16
@@ -39,24 +37,27 @@ ROBOT_SAFETY_MARGIN = 0.10
 COLLISION_FAIL_DISTANCE_M = 0.30
 ROBOT_RESPAWN_Z = 0.01
 
-DOOR_MODEL_NAME = "resizable_door_world"
+BOX_MODEL_NAME = "resizable_box_world"
 ROBOT_ENTITY_NAME = "tb3_trial_bot"
 ROBOT_DELETE_KEYWORDS = ["turtlebot3", "waffle", "burger", "tb3_trial_bot"]
 PRESERVED_MODEL_NAMES = {"ground_plane", "sun"}
 SCENE_EXTRA_FIELDS = [
 	"trial_id",
-	"door_gap_width",
-	"door_wall_length_left",
-	"door_wall_length_right",
+	"box_size_x",
+	"box_size_y",
+	"box_yaw_rad",
 	"robot_start_x",
 	"robot_start_y",
 	"robot_start_yaw",
+	"box_center_x",
+	"box_center_y",
 	"world_center_x",
 	"world_center_y",
 	"world_l1_radius",
 	"world_margin",
 	"collision_fail_distance_m",
 	"collision_happened",
+	"robot_clearance_to_box_m",
 	"robot_clearance_to_wall_m",
 ]
 
@@ -81,61 +82,33 @@ def _format_seconds(seconds: float) -> str:
 	return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
 
+def _rotate_world_to_local(dx: float, dy: float, yaw: float) -> Tuple[float, float]:
+	"""把世界坐标偏移量旋转到BOX局部坐标系。"""
+	c = math.cos(yaw)
+	s = math.sin(yaw)
+	# 旋转 -yaw
+	lx = c * dx + s * dy
+	ly = -s * dx + c * dy
+	return lx, ly
+
+
 def is_in_world_safe_region(x: float, y: float, margin: float = WORLD_MARGIN) -> bool:
 	"""判定点是否在菱形外墙内，并与墙保持margin。"""
 	return abs(x - WORLD_CENTER_X) + abs(y - WORLD_CENTER_Y) <= (WORLD_L1_RADIUS - margin)
 
 
-def _door_geometry_from_gap(door_gap_width: float):
-	"""根据门洞宽度返回左右墙线段端点和墙长。"""
-	gap = max(DOOR_GAP_WIDTH_MIN, min(DOOR_GAP_WIDTH_MAX, door_gap_width))
-	wall_len = (DOOR_TOTAL_LENGTH - gap) / 2.0
-	if wall_len <= 0.0:
-		raise ValueError(f"门洞宽度过大，导致墙长无效: gap={gap:.3f}")
-
-	ux = (DOOR_SEGMENT_END_X - DOOR_SEGMENT_START_X) / DOOR_TOTAL_LENGTH
-	uy = (DOOR_SEGMENT_END_Y - DOOR_SEGMENT_START_Y) / DOOR_TOTAL_LENGTH
-
-	left_a = (DOOR_SEGMENT_START_X, DOOR_SEGMENT_START_Y)
-	left_b = (DOOR_SEGMENT_START_X + ux * wall_len, DOOR_SEGMENT_START_Y + uy * wall_len)
-	right_a = (
-		DOOR_SEGMENT_START_X + ux * (wall_len + gap),
-		DOOR_SEGMENT_START_Y + uy * (wall_len + gap),
-	)
-	right_b = (DOOR_SEGMENT_END_X, DOOR_SEGMENT_END_Y)
-	return left_a, left_b, right_a, right_b, gap, wall_len
-
-
-def _project_to_door_frame(x: float, y: float) -> Tuple[float, float]:
-	"""投影到门墙局部坐标: s沿门墙方向，n为法向带符号距离。"""
-	ux = (DOOR_SEGMENT_END_X - DOOR_SEGMENT_START_X) / DOOR_TOTAL_LENGTH
-	uy = (DOOR_SEGMENT_END_Y - DOOR_SEGMENT_START_Y) / DOOR_TOTAL_LENGTH
-	vx = -uy
-	vy = ux
-	dx = x - DOOR_SEGMENT_START_X
-	dy = y - DOOR_SEGMENT_START_Y
-	s = dx * ux + dy * uy
-	n = dx * vx + dy * vy
-	return s, n
-
-
-def _point_to_door_walls_distance(x: float, y: float, door_gap_width: float) -> float:
-	"""点到左右门墙线段中心线的最近距离。"""
-	left_a, left_b, right_a, right_b, _, _ = _door_geometry_from_gap(door_gap_width)
-	d_left = _dist_point_to_segment(x, y, left_a[0], left_a[1], left_b[0], left_b[1])
-	d_right = _dist_point_to_segment(x, y, right_a[0], right_a[1], right_b[0], right_b[1])
-	return min(d_left, d_right)
-
-
-def is_inside_door_wall_with_margin(
+def is_inside_box_with_margin(
 	x: float,
 	y: float,
-	door_gap_width: float,
+	box_size_x: float,
+	box_size_y: float,
 	margin: float = 0.30,
 ) -> bool:
-	"""判定点是否落在门墙附近（按墙厚+margin）。"""
-	clearance = _point_to_door_walls_distance(x, y, door_gap_width)
-	return clearance <= (DOOR_WALL_THICKNESS / 2.0 + margin)
+	"""判定点是否落在旋转BOX内（加安全margin）。"""
+	dx = x - WORLD_CENTER_X
+	dy = y - WORLD_CENTER_Y
+	lx, ly = _rotate_world_to_local(dx, dy, BOX_YAW_RAD)
+	return abs(lx) <= (box_size_x / 2.0 + margin) and abs(ly) <= (box_size_y / 2.0 + margin)
 
 
 def _dist_point_to_segment(px: float, py: float, ax: float, ay: float, bx: float, by: float) -> float:
@@ -153,64 +126,35 @@ def _dist_point_to_segment(px: float, py: float, ax: float, ay: float, bx: float
 	return math.hypot(px - qx, py - qy)
 
 
-def _segments_intersect(
-	a1: Tuple[float, float],
-	a2: Tuple[float, float],
-	b1: Tuple[float, float],
-	b2: Tuple[float, float],
-) -> bool:
-	"""判定两线段是否相交（含端点接触）。"""
-
-	def orient(p: Tuple[float, float], q: Tuple[float, float], r: Tuple[float, float]) -> float:
-		return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
-
-	def on_segment(p: Tuple[float, float], q: Tuple[float, float], r: Tuple[float, float]) -> bool:
-		eps = 1e-9
-		return (
-			min(p[0], r[0]) - eps <= q[0] <= max(p[0], r[0]) + eps
-			and min(p[1], r[1]) - eps <= q[1] <= max(p[1], r[1]) + eps
-		)
-
-	o1 = orient(a1, a2, b1)
-	o2 = orient(a1, a2, b2)
-	o3 = orient(b1, b2, a1)
-	o4 = orient(b1, b2, a2)
-
-	if (o1 * o2 < 0.0) and (o3 * o4 < 0.0):
-		return True
-
-	if abs(o1) <= 1e-9 and on_segment(a1, b1, a2):
-		return True
-	if abs(o2) <= 1e-9 and on_segment(a1, b2, a2):
-		return True
-	if abs(o3) <= 1e-9 and on_segment(b1, a1, b2):
-		return True
-	if abs(o4) <= 1e-9 and on_segment(b1, a2, b2):
-		return True
-
-	return False
-
-
-def _segment_to_segment_distance(
-	a1: Tuple[float, float],
-	a2: Tuple[float, float],
-	b1: Tuple[float, float],
-	b2: Tuple[float, float],
+def _point_to_rotated_box_distance(
+	px: float,
+	py: float,
+	box_cx: float,
+	box_cy: float,
+	box_sx: float,
+	box_sy: float,
+	box_yaw: float,
 ) -> float:
-	"""两线段最短距离；相交则返回0。"""
-	if _segments_intersect(a1, a2, b1, b2):
-		return 0.0
-
-	d1 = _dist_point_to_segment(a1[0], a1[1], b1[0], b1[1], b2[0], b2[1])
-	d2 = _dist_point_to_segment(a2[0], a2[1], b1[0], b1[1], b2[0], b2[1])
-	d3 = _dist_point_to_segment(b1[0], b1[1], a1[0], a1[1], a2[0], a2[1])
-	d4 = _dist_point_to_segment(b2[0], b2[1], a1[0], a1[1], a2[0], a2[1])
-	return min(d1, d2, d3, d4)
+	"""点到旋转矩形边界的最短欧氏距离（点在内部时返回0）。"""
+	dx = px - box_cx
+	dy = py - box_cy
+	lx, ly = _rotate_world_to_local(dx, dy, box_yaw)
+	qx = max(abs(lx) - box_sx / 2.0, 0.0)
+	qy = max(abs(ly) - box_sy / 2.0, 0.0)
+	return math.hypot(qx, qy)
 
 
-def _robot_clearance_metrics(door_gap_width: float) -> Tuple[float, float]:
-	"""返回机器人到门墙和到外墙最近距离。"""
-	clear_to_door = _point_to_door_walls_distance(ROBOT_START_X, ROBOT_START_Y, door_gap_width)
+def _robot_clearance_metrics(box_size_x: float, box_size_y: float) -> Tuple[float, float]:
+	"""返回机器人到box和到外墙最近距离。"""
+	clear_to_box = _point_to_rotated_box_distance(
+		ROBOT_START_X,
+		ROBOT_START_Y,
+		WORLD_CENTER_X,
+		WORLD_CENTER_Y,
+		box_size_x,
+		box_size_y,
+		BOX_YAW_RAD,
+	)
 
 	v1 = (WORLD_CENTER_X - WORLD_L1_RADIUS, WORLD_CENTER_Y)
 	v2 = (WORLD_CENTER_X, WORLD_CENTER_Y + WORLD_L1_RADIUS)
@@ -221,12 +165,20 @@ def _robot_clearance_metrics(door_gap_width: float) -> Tuple[float, float]:
 		_dist_point_to_segment(ROBOT_START_X, ROBOT_START_Y, a[0], a[1], b[0], b[1])
 		for a, b in segments
 	)
-	return clear_to_door, clear_to_wall
+	return clear_to_box, clear_to_wall
 
 
-def _robot_clearance_metrics_at_pose(robot_x: float, robot_y: float, door_gap_width: float) -> Tuple[float, float]:
-	"""返回指定机器人位置到门墙和到外墙最近距离。"""
-	clear_to_door = _point_to_door_walls_distance(robot_x, robot_y, door_gap_width)
+def _robot_clearance_metrics_at_pose(robot_x: float, robot_y: float, box_size_x: float, box_size_y: float) -> Tuple[float, float]:
+	"""返回指定机器人位置到box和到外墙最近距离。"""
+	clear_to_box = _point_to_rotated_box_distance(
+		robot_x,
+		robot_y,
+		WORLD_CENTER_X,
+		WORLD_CENTER_Y,
+		box_size_x,
+		box_size_y,
+		BOX_YAW_RAD,
+	)
 
 	v1 = (WORLD_CENTER_X - WORLD_L1_RADIUS, WORLD_CENTER_Y)
 	v2 = (WORLD_CENTER_X, WORLD_CENTER_Y + WORLD_L1_RADIUS)
@@ -237,38 +189,42 @@ def _robot_clearance_metrics_at_pose(robot_x: float, robot_y: float, door_gap_wi
 		_dist_point_to_segment(robot_x, robot_y, a[0], a[1], b[0], b[1])
 		for a, b in segments
 	)
-	return clear_to_door, clear_to_wall
+	return clear_to_box, clear_to_wall
 
 
-def is_scene_safe_for_robot(door_gap_width: float) -> bool:
+def is_scene_safe_for_robot(box_size_x: float, box_size_y: float) -> bool:
 	"""确保障碍和墙体安全距离不会与机器人本体发生碰撞。"""
 	required_clearance = ROBOT_BODY_RADIUS + ROBOT_SAFETY_MARGIN
-	clear_to_door, clear_to_wall = _robot_clearance_metrics(door_gap_width)
-	return (clear_to_door >= required_clearance) and (clear_to_wall >= required_clearance)
+	clear_to_box, clear_to_wall = _robot_clearance_metrics(box_size_x, box_size_y)
+	return (clear_to_box >= required_clearance) and (clear_to_wall >= required_clearance)
 
 
-def sample_door_gap_width() -> float:
-	"""随机采样门洞宽度。"""
-	return random.uniform(DOOR_GAP_WIDTH_MIN, DOOR_GAP_WIDTH_MAX)
+def sample_safe_box_size(max_attempts: int = 200) -> Tuple[float, float]:
+	"""采样满足机器人安全间距约束的box尺寸。"""
+	for _ in range(max_attempts):
+		sx = random.uniform(BOX_SIZE_X_MIN, BOX_SIZE_X_MAX)
+		sy = random.uniform(BOX_SIZE_Y_MIN, BOX_SIZE_Y_MAX)
+		if is_scene_safe_for_robot(sx, sy):
+			return sx, sy
+	raise RuntimeError("无法采样到满足机器人安全距离约束的BOX尺寸，请调整参数范围。")
 
 
-def sample_safe_robot_pose(door_gap_width: float, max_attempts: int = 500) -> Tuple[float, float, float]:
-	"""采样安全机器人位姿，确保不与门墙和外墙碰撞。"""
+def sample_safe_robot_pose(box_size_x: float, box_size_y: float, max_attempts: int = 500) -> Tuple[float, float, float]:
+	"""采样安全机器人位姿，确保不与box和外墙碰撞。"""
 	required_clearance = ROBOT_BODY_RADIUS + ROBOT_SAFETY_MARGIN
 	inner_margin = WORLD_MARGIN + required_clearance
 
 	for _ in range(max_attempts):
-		rx = random.uniform(WORLD_CENTER_X - WORLD_L1_RADIUS + inner_margin, WORLD_CENTER_X - 0.4)
+		rx = random.uniform(WORLD_CENTER_X - WORLD_L1_RADIUS + inner_margin, WORLD_CENTER_X + 0.4)
 		ry = random.uniform(-2.6, 2.6)
 		yaw = random.uniform(-math.pi, math.pi)
 
 		if not is_in_world_safe_region(rx, ry, margin=inner_margin):
 			continue
-		clear_door, clear_wall = _robot_clearance_metrics_at_pose(rx, ry, door_gap_width)
-		if clear_door < required_clearance or clear_wall < required_clearance:
+		clear_box, clear_wall = _robot_clearance_metrics_at_pose(rx, ry, box_size_x, box_size_y)
+		if clear_box < required_clearance or clear_wall < required_clearance:
 			continue
-		s, n = _project_to_door_frame(rx, ry)
-		if abs(n) < 0.8 and 0.0 <= s <= DOOR_TOTAL_LENGTH:
+		if math.hypot(rx - WORLD_CENTER_X, ry - WORLD_CENTER_Y) < 0.8:
 			continue
 		return rx, ry, yaw
 
@@ -278,51 +234,61 @@ def sample_safe_robot_pose(door_gap_width: float, max_attempts: int = 500) -> Tu
 def is_goal_opposite_and_partially_blocked(
 	x: float,
 	y: float,
-	door_gap_width: float,
+	box_size_x: float,
+	box_size_y: float,
 	robot_x: float,
 	robot_y: float,
 ) -> bool:
-	"""目标在门墙另一侧，且机器人到目标连线必须被门墙阻挡。"""
-	_, n_robot = _project_to_door_frame(robot_x, robot_y)
-	s_goal, n_goal = _project_to_door_frame(x, y)
-	if n_robot * n_goal >= -0.10:
+	"""目标在box相对机器人对面，且机器人到目标连线会被box部分遮挡。"""
+	rvx = robot_x - WORLD_CENTER_X
+	rvy = robot_y - WORLD_CENTER_Y
+	gvx = x - WORLD_CENTER_X
+	gvy = y - WORLD_CENTER_Y
+	# 对面：目标向量与机器人向量夹角大于90度
+	if (gvx * rvx + gvy * rvy) >= -0.25:
 		return False
 
-	left_a, left_b, right_a, right_b, _, _ = _door_geometry_from_gap(door_gap_width)
-	path_a = (robot_x, robot_y)
-	path_b = (x, y)
-	block_threshold = DOOR_WALL_THICKNESS / 2.0 + 0.02
-	blocked_by_left = _segment_to_segment_distance(path_a, path_b, left_a, left_b) <= block_threshold
-	blocked_by_right = _segment_to_segment_distance(path_a, path_b, right_a, right_b) <= block_threshold
-	if not (blocked_by_left or blocked_by_right):
+	# 略微挡住：机器人到目标连线需靠近box中心
+	path_dist = _dist_point_to_segment(
+		WORLD_CENTER_X,
+		WORLD_CENTER_Y,
+		robot_x,
+		robot_y,
+		x,
+		y,
+	)
+	box_half_diag = 0.5 * math.hypot(box_size_x, box_size_y)
+	max_allow_dist = box_half_diag + 0.30
+	if path_dist > max_allow_dist:
 		return False
 
-	# 避免目标落在门洞口正中太近位置（过于简单且可能重叠）
-	if abs(n_goal) < 0.45 and (DOOR_TOTAL_LENGTH * 0.5 - door_gap_width * 0.5 - 0.15) <= s_goal <= (DOOR_TOTAL_LENGTH * 0.5 + door_gap_width * 0.5 + 0.15):
-		return False
-
-	if is_inside_door_wall_with_margin(x, y, door_gap_width, margin=0.10):
+	# 避免目标过于贴近box正后方边缘，增加可达性
+	dx = x - WORLD_CENTER_X
+	dy = y - WORLD_CENTER_Y
+	lx, ly = _rotate_world_to_local(dx, dy, BOX_YAW_RAD)
+	if abs(lx) <= (box_size_x / 2.0 + 0.15) and abs(ly) <= (box_size_y / 2.0 + 0.60):
 		return False
 
 	return True
 
 
 def sample_valid_goal(
-	door_gap_width: float,
+	box_size_x: float,
+	box_size_y: float,
 	robot_x: float,
 	robot_y: float,
 	max_attempts: int = 500,
 ) -> Tuple[float, float]:
-	"""采样位于门墙另一侧且需要穿门附近区域的目标点。"""
+	"""采样位于box对面且路径被box略遮挡的有效目标点。"""
 	for _ in range(max_attempts):
 		x = random.uniform(WORLD_CENTER_X - WORLD_L1_RADIUS + WORLD_MARGIN, WORLD_CENTER_X + WORLD_L1_RADIUS - WORLD_MARGIN)
 		y = random.uniform(-3.2, 3.2)
 
 		if not is_in_world_safe_region(x, y):
 			continue
-		if is_inside_door_wall_with_margin(x, y, door_gap_width):
+		if is_inside_box_with_margin(x, y, box_size_x, box_size_y):
 			continue
-		if not is_goal_opposite_and_partially_blocked(x, y, door_gap_width, robot_x, robot_y):
+		if not is_goal_opposite_and_partially_blocked(x, y, box_size_x, box_size_y, robot_x, robot_y):
 			continue
 		if math.hypot(x - robot_x, y - robot_y) < 1.2:
 			continue
@@ -333,31 +299,14 @@ def sample_valid_goal(
 	raise RuntimeError("无法采样到有效目标点，请检查边界和障碍物参数。")
 
 
-def _read_sdf_with_door_gap(sdf_template_path: str, door_gap_width: float, model_name: str) -> str:
+def _read_sdf_with_size(sdf_template_path: str, size_x: float, size_y: float, model_name: str) -> str:
 	with open(sdf_template_path, "r", encoding="utf-8") as f:
 		xml = f.read()
 
-	gap = max(DOOR_GAP_WIDTH_MIN, min(DOOR_GAP_WIDTH_MAX, door_gap_width))
-	wall_len = (DOOR_TOTAL_LENGTH - gap) / 2.0
-	if wall_len <= 0.0:
-		raise ValueError(f"门洞宽度过大，导致墙长无效: gap={gap:.3f}")
-
-	ux = (DOOR_SEGMENT_END_X - DOOR_SEGMENT_START_X) / DOOR_TOTAL_LENGTH
-	uy = (DOOR_SEGMENT_END_Y - DOOR_SEGMENT_START_Y) / DOOR_TOTAL_LENGTH
-	left_center_s = wall_len / 2.0
-	right_center_s = wall_len + gap + wall_len / 2.0
-	left_x = DOOR_SEGMENT_START_X + ux * left_center_s
-	left_y = DOOR_SEGMENT_START_Y + uy * left_center_s
-	right_x = DOOR_SEGMENT_START_X + ux * right_center_s
-	right_y = DOOR_SEGMENT_START_Y + uy * right_center_s
-
-	xml = xml.replace("{WALL_POS_X_LEFT}", f"{left_x:.3f}")
-	xml = xml.replace("{WALL_POS_Y_LEFT}", f"{left_y:.3f}")
-	xml = xml.replace("{WALL_POS_X_RIGHT}", f"{right_x:.3f}")
-	xml = xml.replace("{WALL_POS_Y_RIGHT}", f"{right_y:.3f}")
-	xml = xml.replace("{WALL_LENGTH_LEFT}", f"{wall_len:.3f}")
-	xml = xml.replace("{WALL_LENGTH_RIGHT}", f"{wall_len:.3f}")
-	xml = xml.replace("<model name='Resizable_door_writable'>", f"<model name='{model_name}'>")
+	xml = xml.replace("{SIZE_X}", f"{size_x:.3f}")
+	xml = xml.replace("{SIZE_Y}", f"{size_y:.3f}")
+	xml = xml.replace("<model name='Resizable_box'>", f"<model name='{model_name}'>")
+	xml = xml.replace("<model name='Resizable_box_writable'>", f"<model name='{model_name}'>")
 	return xml
 
 
@@ -511,9 +460,9 @@ def spawn_robot_entity(robot_x: float, robot_y: float, robot_yaw: float):
 		node.destroy_node()
 
 
-def spawn_door_world_obstacle(sdf_template_path: str, door_gap_width: float, model_name: str = DOOR_MODEL_NAME):
-	"""用模板SDF按门洞宽度生成并加载DOOR世界障碍模型。"""
-	node = Node(f"spawn_door_node_{model_name}")
+def spawn_box_world_obstacle(sdf_template_path: str, size_x: float, size_y: float, model_name: str = BOX_MODEL_NAME):
+	"""用模板SDF按指定尺寸生成并加载BOX世界障碍模型。"""
+	node = Node(f"spawn_box_node_{model_name}")
 	try:
 		delete_model_if_exists(model_name)
 
@@ -523,7 +472,7 @@ def spawn_door_world_obstacle(sdf_template_path: str, door_gap_width: float, mod
 
 		req = SpawnEntity.Request()
 		req.name = model_name
-		req.xml = _read_sdf_with_door_gap(sdf_template_path, door_gap_width, model_name)
+		req.xml = _read_sdf_with_size(sdf_template_path, size_x, size_y, model_name)
 		req.initial_pose.orientation.w = 1.0
 
 		fut = spawn_cli.call_async(req)
@@ -533,57 +482,64 @@ def spawn_door_world_obstacle(sdf_template_path: str, door_gap_width: float, mod
 	finally:
 		node.destroy_node()
 
+def _parse_track_result(result: Any) -> bool:
+	if isinstance(result, dict):
+		return bool(result.get("success", False))
+	return bool(result)
 
-def StartTest_DoorWorld(ModelName: str, NUM_TRIALS: int = 100):
-	if ModelName == "Model_1_PPO_Ckpt_Step_10000":
-		from chase_goal_record_data_Model1PpoCkptStep10000 import (
-			track_single_goal as _track_single_goal,
-			DataRecorder as _DataRecorder,
-		)
-		base_file_name = "Output_Model_1_PPO_Ckpt_Door_World_Test.csv"
-	elif ModelName == "Model_2_Supervised_Ckpt_Step_200000":
-		from chase_goal_record_data_Model2SupervisedSkptStep20000 import (
-			track_single_goal as _track_single_goal,
-			DataRecorder as _DataRecorder,
-		)
-		base_file_name = "Output_Model_2_PPO_Ckpt_Door_World_Test.csv"
-	elif ModelName == "Model_3_PPO_Ckpt_Step_740000":
-		from chase_goal_record_data_Model3PpoCkptStep740000 import (
-            track_single_goal as _track_single_goal,
-            DataRecorder as _DataRecorder,
-        )
-		base_file_name = "Output_Model_3_PPO_Ckpt_Door_World_Test.csv"
-	else:
-		# default to Model 1 if unknown model name is provided
-		from chase_goal_record_data_Model1PpoCkptStep10000 import (
-			track_single_goal as _track_single_goal,
-			DataRecorder as _DataRecorder,
-		)
-		base_file_name = "Output_Model_1_PPO_Ckpt_Door_World_Test.csv"
 
-	# 统一引用，避免分支导入后产生 Union 类型冲突。
-	track_single_goal_fn: Callable[..., bool] = _track_single_goal
+def _get_status(result: Any) -> str:
+	if isinstance(result, dict):
+		return str(result.get("status", "failed"))
+	return "success" if bool(result) else "failed"
+
+
+MODEL_NAMES = [
+	"simple_fc_sft",
+	"cnn_lstm_sft_nodoor",
+	"cnn_lstm_sft",
+	"cnn_gru_sft",
+	"fc_lstm_sft",
+]
+
+
+def StartTest_BoxWorld(ModelName: str, NUM_TRIALS: int = 200):
+	from chase_goal_record_data_5_models import (
+		track_single_goal as _track_single_goal,
+		DataRecorder as _DataRecorder,
+	)
+
+	track_single_goal_fn: Callable[..., dict] = _track_single_goal
 	DataRecorderCls: type[Any] = _DataRecorder
 
-	rclpy.init()
+	if not rclpy.ok():
+		rclpy.init()
 
 	try:
 		clear_all_world_models()
 		delete_all_goals()
 
-		output_dir = os.path.join(os.path.dirname(__file__), "Models", "Outputs")
+		script_dir = os.path.dirname(__file__)
+		ckpt_dir = os.path.join(script_dir, "Models")
+		output_dir = os.path.join(script_dir, "Models", "Outputs")
 		os.makedirs(output_dir, exist_ok=True)
+
+		base_file_name = f"Output_{ModelName}_Box_World_Test.csv"
 		file_name = get_unique_filename(output_dir, base_file_name)
+		output_path = os.path.join(output_dir, file_name)
+
 		recorder = DataRecorderCls(
-			filename=os.path.join(output_dir, file_name),
-			extra_fields=SCENE_EXTRA_FIELDS,
+			filename=output_path,
+			extra_fields=SCENE_EXTRA_FIELDS + ["model_name", "world_name"],
 		)
 
-		sdf_template_path = os.path.join(os.path.dirname(__file__), "Worlds", "Resizable_door_writable.sdf")
+		sdf_template_path = os.path.join(script_dir, "Worlds", "Resizable_box_writable.sdf")
 		if not os.path.exists(sdf_template_path):
 			raise FileNotFoundError(f"未找到SDF模板文件: {sdf_template_path}")
 
-		print(f"开始进行 {NUM_TRIALS} 轮 door_world 随机目标追踪实验...")
+		print(f"开始进行 {NUM_TRIALS} 轮 box_world 随机目标追踪实验...")
+		print(f"当前模型: {ModelName}")
+		print(f"输出文件: {output_path}")
 		total_start_time = time.perf_counter()
 
 		for i in range(1, NUM_TRIALS + 1):
@@ -591,78 +547,86 @@ def StartTest_DoorWorld(ModelName: str, NUM_TRIALS: int = 100):
 			clear_all_world_models()
 			delete_all_goals()
 
-			door_gap_width = sample_door_gap_width()
-			wall_len = (DOOR_TOTAL_LENGTH - door_gap_width) / 2.0
-			robot_x, robot_y, robot_yaw = sample_safe_robot_pose(door_gap_width)
-			_, robot_clearance_to_wall = _robot_clearance_metrics_at_pose(
+			box_size_x, box_size_y = sample_safe_box_size()
+			robot_x, robot_y, robot_yaw = sample_safe_robot_pose(box_size_x, box_size_y)
+			robot_clearance_to_box, robot_clearance_to_wall = _robot_clearance_metrics_at_pose(
 				robot_x,
 				robot_y,
-				door_gap_width,
+				box_size_x,
+				box_size_y,
 			)
 
-			spawn_door_world_obstacle(
+			spawn_box_world_obstacle(
 				sdf_template_path=sdf_template_path,
-				door_gap_width=door_gap_width,
-				model_name=DOOR_MODEL_NAME,
+				size_x=box_size_x,
+				size_y=box_size_y,
+				model_name=BOX_MODEL_NAME,
 			)
 			spawn_robot_entity(robot_x, robot_y, robot_yaw)
 
-			random_x, random_y = sample_valid_goal(door_gap_width, robot_x, robot_y)
-			goal_name = f"door_goal_{i}"
+			random_x, random_y = sample_valid_goal(box_size_x, box_size_y, robot_x, robot_y)
+			goal_name = f"box_goal_{i}"
 
 			print(
-				f"\n--- 第{i}/{NUM_TRIALS}轮 ---",
-				f"\n{ModelName}",
-				"\nDOOR WORLD",
-				# f"\nrobot ({robot_x:.2f}, {robot_y:.2f}, yaw={robot_yaw:.2f})",
-				f"\n{goal_name} ({random_x:.2f}, {random_y:.2f})",
-				f"\ndoor_gap={door_gap_width:.2f}, wall_len={wall_len:.2f}"
+				f"\n--- 第{i}/{NUM_TRIALS}轮 ---"
+				f"\n模型: {ModelName}"
+				"\n场景: BOX WORLD"
+				f"\nrobot ({robot_x:.2f}, {robot_y:.2f}, yaw={robot_yaw:.2f})"
+				f"\n{goal_name} ({random_x:.2f}, {random_y:.2f})"
+				f"\nbox_size=({box_size_x:.2f}, {box_size_y:.2f})"
 			)
 
 			spawn_goal_point(random_x, random_y, 0.2, name=goal_name)
 
-			reached = track_single_goal_fn(
+			scene_data = {
+				"trial_id": i,
+				"box_size_x": round(box_size_x, 4),
+				"box_size_y": round(box_size_y, 4),
+				"box_yaw_rad": BOX_YAW_RAD,
+				"robot_start_x": round(robot_x, 4),
+				"robot_start_y": round(robot_y, 4),
+				"robot_start_yaw": round(robot_yaw, 4),
+				"box_center_x": WORLD_CENTER_X,
+				"box_center_y": WORLD_CENTER_Y,
+				"world_center_x": WORLD_CENTER_X,
+				"world_center_y": WORLD_CENTER_Y,
+				"world_l1_radius": WORLD_L1_RADIUS,
+				"world_margin": WORLD_MARGIN,
+				"collision_fail_distance_m": COLLISION_FAIL_DISTANCE_M,
+				"collision_happened": 0,
+				"robot_clearance_to_box_m": round(robot_clearance_to_box, 4),
+				"robot_clearance_to_wall_m": round(robot_clearance_to_wall, 4),
+				"model_name": ModelName,
+				"world_name": "box_world",
+			}
+
+			result = track_single_goal_fn(
 				goal_xy=(random_x, random_y),
 				recorder=recorder,
 				goal_name=goal_name,
+				model_name=ModelName,
+				ckpt_dir=ckpt_dir,
 				timeout_sec=TIMEOUT_PER_GOAL,
 				reach_threshold_m=0.3,
 				collision_fail_distance_m=COLLISION_FAIL_DISTANCE_M,
-				scene_data={
-					"trial_id": i,
-					"door_gap_width": round(door_gap_width, 4),
-					"door_wall_length_left": round(wall_len, 4),
-					"door_wall_length_right": round(wall_len, 4),
-					"robot_start_x": round(robot_x, 4),
-					"robot_start_y": round(robot_y, 4),
-					"robot_start_yaw": round(robot_yaw, 4),
-					"world_center_x": WORLD_CENTER_X,
-					"world_center_y": WORLD_CENTER_Y,
-					"world_l1_radius": WORLD_L1_RADIUS,
-					"world_margin": WORLD_MARGIN,
-					"collision_fail_distance_m": COLLISION_FAIL_DISTANCE_M,
-					"collision_happened": 0,
-					"robot_clearance_to_wall_m": round(robot_clearance_to_wall, 4),
-				},
+				scene_data=scene_data,
 			)
 
-			if reached:
+			if _parse_track_result(result):
 				print(f"成功: {goal_name} 已到达")
 			else:
-				print(f"失败: {goal_name} 未到达")
+				print(f"失败: {goal_name} 未到达, status={_get_status(result)}")
 
 			delete_all_goals()
-
 			round_elapsed = time.perf_counter() - round_start_time
 			total_elapsed = time.perf_counter() - total_start_time
-
 			print(
 				f"耗时统计: "
 				f"本轮={_format_seconds(round_elapsed)} | "
 				f"累计={_format_seconds(total_elapsed)} | "
 			)
 
-		print(f"\n所有实验已完成。数据记录在 '{os.path.join(output_dir, file_name)}' 中。\n")
+		print(f"\n所有实验已完成。数据记录在 '{output_path}' 中。\n")
 
 	finally:
 		try:
@@ -673,6 +637,9 @@ def StartTest_DoorWorld(ModelName: str, NUM_TRIALS: int = 100):
 		rclpy.shutdown()
 
 
-# if __name__ == "__main__":
-# 	StartTest_DoorWorld("Model_1_PPO_Ckpt_Step_10000")
-# 	StartTest_DoorWorld("Model_2_PPO_Ckpt_Step_10000")
+if __name__ == "__main__":
+	StartTest_BoxWorld("simple_fc_sft", NUM_TRIALS=200)
+
+	# 批量跑 5 个模型时，注释上面一行，取消下面注释：
+	# for model_name in MODEL_NAMES:
+	# 	StartTest_BoxWorld(model_name, NUM_TRIALS=200)

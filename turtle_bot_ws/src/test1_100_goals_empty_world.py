@@ -123,6 +123,6 @@ def StartTest_EmptyWorld(ModelName: str, NUM_TRIALS: int = 200):
     print(f"\n所有实验已完成。数据记录在 '{os.path.join(output_dir, file_name)}' 中。\n")
     rclpy.shutdown()
 
-if __name__ == "__main__":
-    # StartTest_EmptyWorld("Model_1_PPO_Ckpt_Step_10000")
-    StartTest_EmptyWorld("Model_2_PPO_Ckpt_Step_10000")
+# if __name__ == "__main__":
+#     # StartTest_EmptyWorld("Model_1_PPO_Ckpt_Step_10000")
+#     StartTest_EmptyWorld("Model_2_PPO_Ckpt_Step_10000")
